@@ -24,7 +24,7 @@ size_t epkKeyCount = 17;
 
 void decryptAES128ecbUnalign(uint8_t* data, size_t len, const uint8_t key[16]) {
     struct AES_ctx ctx;
-    AES_init_ctx(&ctx, key);
+    AES_init_ctx(&ctx, key, AES_KEY_128);
 
     size_t blocks = len / 16;
 

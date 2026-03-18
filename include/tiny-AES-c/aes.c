@@ -36,6 +36,7 @@ NOTE:   String length must be evenly divisible by 16byte (str_len % 16 == 0)
 /* Includes:                                                                 */
 /*****************************************************************************/
 #include <string.h> // CBC mode, for memset
+#include <stdlib.h>
 #include "aes.h"
 
 /*****************************************************************************/
@@ -43,17 +44,6 @@ NOTE:   String length must be evenly divisible by 16byte (str_len % 16 == 0)
 /*****************************************************************************/
 // The number of columns comprising a state in AES. This is a constant in AES. Value=4
 #define Nb 4
-
-#if defined(AES256) && (AES256 == 1)
-    #define Nk 8
-    #define Nr 14
-#elif defined(AES192) && (AES192 == 1)
-    #define Nk 6
-    #define Nr 12
-#else
-    #define Nk 4        // The number of 32 bit words in a key.
-    #define Nr 10       // The number of rounds in AES Cipher.
-#endif
 
 // jcallan@github points out that declaring Multiply as a function 
 // reduces code size considerably with the Keil ARM compiler.
@@ -143,33 +133,33 @@ static uint8_t getSBoxValue(uint8_t num)
 #define getSBoxValue(num) (sbox[(num)])
 
 // This function produces Nb(Nr+1) round keys. The round keys are used in each round to decrypt the states. 
-static void KeyExpansion(uint8_t* RoundKey, const uint8_t* Key)
+static void KeyExpansion(struct AES_ctx* ctx, const uint8_t* Key)
 {
   unsigned i, j, k;
   uint8_t tempa[4]; // Used for the column/row operations
   
   // The first round key is the key itself.
-  for (i = 0; i < Nk; ++i)
+  for (i = 0; i < ctx->Nk; ++i)
   {
-    RoundKey[(i * 4) + 0] = Key[(i * 4) + 0];
-    RoundKey[(i * 4) + 1] = Key[(i * 4) + 1];
-    RoundKey[(i * 4) + 2] = Key[(i * 4) + 2];
-    RoundKey[(i * 4) + 3] = Key[(i * 4) + 3];
+    ctx->RoundKey[(i * 4) + 0] = Key[(i * 4) + 0];
+    ctx->RoundKey[(i * 4) + 1] = Key[(i * 4) + 1];
+    ctx->RoundKey[(i * 4) + 2] = Key[(i * 4) + 2];
+    ctx->RoundKey[(i * 4) + 3] = Key[(i * 4) + 3];
   }
 
   // All other round keys are found from the previous round keys.
-  for (i = Nk; i < Nb * (Nr + 1); ++i)
+  for (i = ctx->Nk; i < Nb * (ctx->Nr + 1); ++i)
   {
     {
       k = (i - 1) * 4;
-      tempa[0]=RoundKey[k + 0];
-      tempa[1]=RoundKey[k + 1];
-      tempa[2]=RoundKey[k + 2];
-      tempa[3]=RoundKey[k + 3];
+      tempa[0]=ctx->RoundKey[k + 0];
+      tempa[1]=ctx->RoundKey[k + 1];
+      tempa[2]=ctx->RoundKey[k + 2];
+      tempa[3]=ctx->RoundKey[k + 3];
 
     }
 
-    if (i % Nk == 0)
+    if (i % ctx->Nk == 0)
     {
       // This function shifts the 4 bytes in a word to the left once.
       // [a0,a1,a2,a3] becomes [a1,a2,a3,a0]
@@ -194,10 +184,9 @@ static void KeyExpansion(uint8_t* RoundKey, const uint8_t* Key)
         tempa[3] = getSBoxValue(tempa[3]);
       }
 
-      tempa[0] = tempa[0] ^ Rcon[i/Nk];
+      tempa[0] = tempa[0] ^ Rcon[i/ctx->Nk];
     }
-#if defined(AES256) && (AES256 == 1)
-    if (i % Nk == 4)
+    if (ctx->Nk == 8 && i % ctx->Nk == 4)
     {
       // Function Subword()
       {
@@ -207,23 +196,37 @@ static void KeyExpansion(uint8_t* RoundKey, const uint8_t* Key)
         tempa[3] = getSBoxValue(tempa[3]);
       }
     }
-#endif
-    j = i * 4; k=(i - Nk) * 4;
-    RoundKey[j + 0] = RoundKey[k + 0] ^ tempa[0];
-    RoundKey[j + 1] = RoundKey[k + 1] ^ tempa[1];
-    RoundKey[j + 2] = RoundKey[k + 2] ^ tempa[2];
-    RoundKey[j + 3] = RoundKey[k + 3] ^ tempa[3];
+    j = i * 4; k=(i - ctx->Nk) * 4;
+    ctx->RoundKey[j + 0] = ctx->RoundKey[k + 0] ^ tempa[0];
+    ctx->RoundKey[j + 1] = ctx->RoundKey[k + 1] ^ tempa[1];
+    ctx->RoundKey[j + 2] = ctx->RoundKey[k + 2] ^ tempa[2];
+    ctx->RoundKey[j + 3] = ctx->RoundKey[k + 3] ^ tempa[3];
   }
 }
 
-void AES_init_ctx(struct AES_ctx* ctx, const uint8_t* key)
+void AES_init_ctx(struct AES_ctx* ctx, const uint8_t* key, AES_KeySize key_size)
 {
-  KeyExpansion(ctx->RoundKey, key);
+    if (key_size == AES_KEY_128) {
+        ctx->Nk = 4;
+        ctx->Nr = 10;
+        ctx->keyExpSize = 176;
+    } else if (key_size == AES_KEY_256) {
+        ctx->Nk = 8;
+        ctx->Nr = 14;
+        ctx->keyExpSize = 240;
+    } else {
+        // Invalid key size, default to 128
+        ctx->Nk = 4;
+        ctx->Nr = 10;
+        ctx->keyExpSize = 176;
+    }
+    ctx->RoundKey = (uint8_t*)malloc(ctx->keyExpSize);
+    KeyExpansion(ctx, key);
 }
 #if (defined(CBC) && (CBC == 1)) || (defined(CTR) && (CTR == 1))
-void AES_init_ctx_iv(struct AES_ctx* ctx, const uint8_t* key, const uint8_t* iv)
+void AES_init_ctx_iv(struct AES_ctx* ctx, const uint8_t* key, AES_KeySize key_size, const uint8_t* iv)
 {
-  KeyExpansion(ctx->RoundKey, key);
+  AES_init_ctx(ctx, key, key_size);
   memcpy (ctx->Iv, iv, AES_BLOCKLEN);
 }
 void AES_ctx_set_iv(struct AES_ctx* ctx, const uint8_t* iv)
@@ -231,6 +234,11 @@ void AES_ctx_set_iv(struct AES_ctx* ctx, const uint8_t* iv)
   memcpy (ctx->Iv, iv, AES_BLOCKLEN);
 }
 #endif
+
+void AES_free_ctx(struct AES_ctx* ctx)
+{
+    free(ctx->RoundKey);
+}
 
 // This function adds the round key to state.
 // The round key is added to the state by an XOR function.
@@ -410,12 +418,12 @@ static void InvShiftRows(state_t* state)
 #endif // #if (defined(CBC) && CBC == 1) || (defined(ECB) && ECB == 1)
 
 // Cipher is the main function that encrypts the PlainText.
-static void Cipher(state_t* state, const uint8_t* RoundKey)
+static void Cipher(struct AES_ctx* ctx, state_t* state)
 {
   uint8_t round = 0;
 
   // Add the First round key to the state before starting the rounds.
-  AddRoundKey(0, state, RoundKey);
+  AddRoundKey(0, state, ctx->RoundKey);
 
   // There will be Nr rounds.
   // The first Nr-1 rounds are identical.
@@ -425,33 +433,33 @@ static void Cipher(state_t* state, const uint8_t* RoundKey)
   {
     SubBytes(state);
     ShiftRows(state);
-    if (round == Nr) {
+    if (round == ctx->Nr) {
       break;
     }
     MixColumns(state);
-    AddRoundKey(round, state, RoundKey);
+    AddRoundKey(round, state, ctx->RoundKey);
   }
   // Add round key to last round
-  AddRoundKey(Nr, state, RoundKey);
+  AddRoundKey(ctx->Nr, state, ctx->RoundKey);
 }
 
 #if (defined(CBC) && CBC == 1) || (defined(ECB) && ECB == 1)
-static void InvCipher(state_t* state, const uint8_t* RoundKey)
+static void InvCipher(struct AES_ctx* ctx, state_t* state)
 {
   uint8_t round = 0;
 
   // Add the First round key to the state before starting the rounds.
-  AddRoundKey(Nr, state, RoundKey);
+  AddRoundKey(ctx->Nr, state, ctx->RoundKey);
 
   // There will be Nr rounds.
   // The first Nr-1 rounds are identical.
   // These Nr rounds are executed in the loop below.
   // Last one without InvMixColumn()
-  for (round = (Nr - 1); ; --round)
+  for (round = (ctx->Nr - 1); ; --round)
   {
     InvShiftRows(state);
     InvSubBytes(state);
-    AddRoundKey(round, state, RoundKey);
+    AddRoundKey(round, state, ctx->RoundKey);
     if (round == 0) {
       break;
     }
@@ -470,13 +478,13 @@ static void InvCipher(state_t* state, const uint8_t* RoundKey)
 void AES_ECB_encrypt(const struct AES_ctx* ctx, uint8_t* buf)
 {
   // The next function call encrypts the PlainText with the Key using AES algorithm.
-  Cipher((state_t*)buf, ctx->RoundKey);
+  Cipher((struct AES_ctx*)ctx, (state_t*)buf);
 }
 
 void AES_ECB_decrypt(const struct AES_ctx* ctx, uint8_t* buf)
 {
   // The next function call decrypts the PlainText with the Key using AES algorithm.
-  InvCipher((state_t*)buf, ctx->RoundKey);
+  InvCipher((struct AES_ctx*)ctx, (state_t*)buf);
 }
 
 
@@ -505,7 +513,7 @@ void AES_CBC_encrypt_buffer(struct AES_ctx *ctx, uint8_t* buf, size_t length)
   for (i = 0; i < length; i += AES_BLOCKLEN)
   {
     XorWithIv(buf, Iv);
-    Cipher((state_t*)buf, ctx->RoundKey);
+    Cipher(ctx, (state_t*)buf);
     Iv = buf;
     buf += AES_BLOCKLEN;
   }
@@ -520,7 +528,7 @@ void AES_CBC_decrypt_buffer(struct AES_ctx* ctx, uint8_t* buf, size_t length)
   for (i = 0; i < length; i += AES_BLOCKLEN)
   {
     memcpy(storeNextIv, buf, AES_BLOCKLEN);
-    InvCipher((state_t*)buf, ctx->RoundKey);
+    InvCipher(ctx, (state_t*)buf);
     XorWithIv(buf, ctx->Iv);
     memcpy(ctx->Iv, storeNextIv, AES_BLOCKLEN);
     buf += AES_BLOCKLEN;
@@ -547,7 +555,7 @@ void AES_CTR_xcrypt_buffer(struct AES_ctx* ctx, uint8_t* buf, size_t length)
     {
       
       memcpy(buffer, ctx->Iv, AES_BLOCKLEN);
-      Cipher((state_t*)buffer,ctx->RoundKey);
+      Cipher(ctx, (state_t*)buffer);
 
       /* Increment Iv and handle overflow */
       for (bi = (AES_BLOCKLEN - 1); bi >= 0; --bi)

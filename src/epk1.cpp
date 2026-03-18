@@ -83,14 +83,22 @@ namespace Epk1 {
 
         CommonHeader header;
         memcpy(&header, buf, sizeof(header));
-
         if (memcmp(header.magicBytes, k_Signature, 4) != 0) {
             DBG_LOG("[epk1] fail signature\n");
             return S_FALSE;
         }
 
         DBG_LOG("[epk1] dataSize %i\n", header.dataSize);
+        if (header.dataSize == 0) {
+            DBG_LOG("[epk1] invalid datasize\n");
+            return S_FALSE;
+        } 
+
         DBG_LOG("[epk1] pakCount %u\n", header.pakCount);
+        if (header.pakCount > 32) {
+            DBG_LOG("[epk1] invalid pakcount\n");
+            return S_FALSE;
+        }
 
         //the offset of first entry which appears after common header used as header size
         _headerSize = GetUi32(buf + sizeof(CommonHeader));
