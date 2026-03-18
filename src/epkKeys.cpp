@@ -1,30 +1,18 @@
 #include "epkKeys.h"
+#include "util.h"
+#include <string>
+#include <fstream>
 
-uint8_t epkKeys[][16] = {
-    {0x21, 0x4B, 0xF3, 0xC1, 0x29, 0x54, 0x7A, 0xF3, 0x1D, 0x32, 0xA5, 0xEC, 0xB4, 0x74, 0x21, 0x92}, //unknown
-    {0x1F, 0x1E, 0x1D, 0x1C, 0x1B, 0x1A, 0x19, 0x18, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00}, //BCM35230/early MTK5369 and LG1152
-    {0x71, 0x84, 0xC9, 0xC4, 0x28, 0xD0, 0x3C, 0x44, 0x51, 0x88, 0x23, 0x4D, 0x5A, 0x82, 0x71, 0x96}, //mtk5369 - Mediatek GP4
-    {0x38, 0x5A, 0x99, 0x24, 0x30, 0x19, 0x6A, 0x8C, 0x44, 0xF1, 0x98, 0x58, 0x23, 0xC0, 0x14, 0x40}, //mtk5398 (a2) - Mediatek NetCast 4/4.5
-    {0x68, 0x56, 0xA0, 0x48, 0x24, 0x75, 0xA8, 0xB4, 0x17, 0x28, 0xA3, 0x54, 0x74, 0x81, 0x02, 0x03}, //new BCM35230
-    {0x2F, 0x2E, 0x2D, 0x2C, 0x2B, 0x2A, 0x29, 0x28, 0x17, 0x16, 0x15, 0x14, 0x13, 0x12, 0x11, 0x10}, //Saturn7/BCM3556
-    {0x21, 0x2D, 0x3B, 0x2A, 0x5C, 0x2D, 0x3A, 0x2C, 0x4D, 0x5B, 0x23, 0x4B, 0x1A, 0x32, 0x1D, 0x2A}, //new Saturn7/old LM1
-    {0x4F, 0x83, 0x6A, 0xAE, 0xB4, 0x30, 0x1F, 0x26, 0x17, 0x2A, 0x9B, 0x0E, 0x11, 0x20, 0xEA, 0xF4}, //LM1 PDP
-    {0x4E, 0xE6, 0x62, 0xC7, 0xA2, 0xC0, 0x91, 0x7F, 0x73, 0x28, 0xDE, 0x73, 0xA0, 0x83, 0x6C, 0x6B}, //LM1 LCD
-    {0x2F, 0x53, 0x4A, 0xBE, 0x34, 0x80, 0x1A, 0x36, 0xB7, 0xDA, 0x6B, 0x3E, 0xB1, 0xC0, 0x4A, 0xD4}, //m1 - MStar non-webOS
-    {0x7B, 0x2C, 0xA5, 0x94, 0x3D, 0x2E, 0x75, 0x2C, 0xF5, 0x86, 0x06, 0x22, 0x8C, 0x5B, 0x2D, 0xAD}, //m1a - MStar non-webOS (L15 signage)
-    {0xD5, 0x5C, 0x68, 0x64, 0x03, 0x5A, 0x8C, 0x8A, 0x2B, 0x35, 0xA6, 0xD6, 0xC4, 0x56, 0x55, 0x96}, //m2 - MStar SimpleSmart
-    {0x68, 0xA2, 0x84, 0xB4, 0x95, 0x3C, 0xAD, 0x15, 0x02, 0x4B, 0xED, 0x2C, 0x4F, 0x85, 0x2A, 0x09}, //lm14 - MStar NetCast 4.5
-    {0x48, 0x13, 0xB5, 0xB6, 0x3C, 0x99, 0x8A, 0x28, 0x74, 0xEF, 0x33, 0x20, 0x68, 0x4A, 0xC8, 0xD9}, //lg1152 - LX GP4
-    {0x14, 0xB3, 0x62, 0x34, 0x88, 0x21, 0x22, 0x50, 0xC7, 0xC9, 0x92, 0xAA, 0xCD, 0x53, 0x74, 0x47}, //lg115x - LX NC4
-	
-	{0x34, 0xCC, 0x21, 0x9D, 0x3A, 0xFC, 0x10, 0x24, 0x33, 0x10, 0x9B, 0xBC, 0x1D, 0xA4, 0x40, 0x95}, //m14 (m14tv) - LX webOS 1 (2014)
-    {0x4A, 0xCD, 0x2C, 0xA8, 0x42, 0x5B, 0xBA, 0x6C, 0x49, 0xFD, 0x03, 0xA1, 0x74, 0x30, 0x02, 0x39}, //o18 - LX webOS 4.5 (2019)
-};
-size_t epkKeyCount = 17;
-
-void decryptAES128ecbUnalign(uint8_t* data, size_t len, const uint8_t key[16]) {
+void decryptAESecbAuto(uint8_t* data, size_t len, uint8_t* key, size_t key_size) {
     struct AES_ctx ctx;
-    AES_init_ctx(&ctx, key, AES_KEY_128);
+
+    if (key_size == AES_KEY_128) {
+        AES_init_ctx(&ctx, key, AES_KEY_128);
+    } else if (key_size == AES_KEY_256) {
+        AES_init_ctx(&ctx, key, AES_KEY_256);
+    } else {
+        // ?
+    }
 
     size_t blocks = len / 16;
 
@@ -35,21 +23,106 @@ void decryptAES128ecbUnalign(uint8_t* data, size_t len, const uint8_t key[16]) {
     //unaligned bytes are left plain, this is EPK behaviour.
 }
 
-const uint8_t* tryFindAESkey(const uint8_t* data, size_t len, const uint8_t* magic, size_t magic_len, size_t offset) {
+static uint8_t hexToint(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return 0; //?
+}
+
+static std::vector<uint8_t> hexStrToBytes(const std::string& hex) {
+    std::vector<uint8_t> bytes;
+    bytes.reserve(hex.size() / 2);
+
+    for (size_t i = 0; i < hex.size(); i += 2) {
+        uint8_t byte = (hexToint(hex[i]) << 4) | hexToint(hex[i + 1]);
+        bytes.push_back(byte);
+    }
+    return bytes;
+}
+
+EpkKey *tryFindAESkeyNew(const uint8_t* data, size_t len, const uint8_t* magic, size_t magic_len, size_t offset) {
     if (offset + magic_len > len) {
         return nullptr;
     }
     std::vector<uint8_t> buf(len);
 
-    for (size_t i = 0; i < epkKeyCount; i++) {
-        memcpy(buf.data(), data, len);
+    std::wstring dir = getDLLlocation();
+    DBG_LOG("[epkKeys] dll loc : %ls\n", dir.c_str());
 
-        decryptAES128ecbUnalign(buf.data(), len, epkKeys[i]);
+    std::wstring keyFilePath = dir + L"\\AES.key";
+    DBG_LOG("[epkKeys] open keyfile : %ls\n", keyFilePath.c_str());
 
-        if (memcmp(buf.data() + offset, magic, magic_len) == 0) {
-            return epkKeys[i]; //found key
-        }
+    std::ifstream keyFile(keyFilePath);
+    if (!keyFile.is_open()) {
+        DBG_LOG("[epkKeys] fail to open aes key file\n");
+        return nullptr;
     }
 
-    return nullptr; //did not find a matching key
+    std::string line;
+
+    while (std::getline(keyFile, line)) {
+        DBG_LOG("[epkKeys] LINE = %s\n", line.c_str());
+
+        if (line.empty() || (line[0] == '#') || (line[0] == '\n') || (line[0] == '\r') || (line[0] == '\0')) {
+            //comment or empty line
+            continue;
+        }
+
+        std::string hexPart;
+        std::string commentPart;
+
+        size_t commentPos = line.find('#');
+        if (commentPos != std::string::npos) {
+            hexPart = line.substr(0, commentPos);
+            commentPart = line.substr(commentPos + 1); //no #
+        } else {
+            hexPart = line.substr(0);
+        }
+
+        size_t hexStp = hexPart.find_last_not_of(" \t\r\n");
+        if (hexStp == std::string::npos) {
+            continue;
+        }
+        hexPart = hexPart.substr(0, hexStp + 1);
+        commentPart = commentPart.empty() ? hexPart : commentPart; //if no comment use the hex repesentation of key
+
+        DBG_LOG("[epkKeys] hex -> %s\n", hexPart.c_str());
+
+        std::vector<uint8_t> key = hexStrToBytes(hexPart);
+
+        uint8_t* key_data = key.data();
+        size_t key_size = key.size();
+
+        DBG_LOG("[epkKeys] key size -> %zu\n", key_size);
+        DBG_LOG("[epkKeys] key -> ");
+        for (int i = 0; i < key_size; i++) {
+            DBG_LOG("%02X", key_data[i]);
+        }
+        DBG_LOG("\n");
+
+        if (key_size == AES_KEY_128 || key_size == AES_KEY_256) {
+            memcpy(buf.data(), data, len);
+
+            decryptAESecbAuto(buf.data(), len, key_data, key_size);
+
+            if (memcmp(buf.data() + offset, magic, magic_len) == 0) {
+                DBG_LOG("[epkKeys] ^^^ SUCCESS KEY\n");
+                EpkKey* keyE = new EpkKey();
+                keyE->key = new uint8_t[key_size];
+                memcpy(keyE->key, key_data, key_size);
+                keyE->keySize = key_size;
+                keyE->comment = commentPart;
+                return keyE;
+            }
+
+        } else {
+            DBG_LOG("[epkKeys] fail key size\n");
+            continue;
+        }
+
+    }
+
+    return nullptr;
 }
+

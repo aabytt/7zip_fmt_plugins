@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <string>
 
 #ifdef DEBUG
 
@@ -16,3 +17,5 @@ extern FILE* g_logF;
 #  define DBG_LOG(...)
 
 #endif
+
+std::wstring getDLLlocation();

@@ -13,6 +13,10 @@ namespace Epk2 {
 
     NWindows::NCOM::CPropVariant GetProperty(PROPID propId);
 
+    enum {
+        cusedKey = 208,
+    };
+
     // --
 
     #define SIGNATURE_SIZE 128

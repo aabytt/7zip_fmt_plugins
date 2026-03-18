@@ -31,17 +31,20 @@ namespace Epk2 {
         UInt64 _headerSize;
         uint8_t _version[4];
         std::string _otaID;
-        uint8_t _key[16];
+        EpkKey* _key;
 
         HRESULT Open2(IInStream* stream);
     };
 
     // specifies the avaliable properties of the archive itself
-    static const Byte kArcProps[] = {
-        kpidHeadersSize,
-        kpidComment,        //used for OTAID + ver
+     static const CStatProp kArcProps[] = {
+        { NULL, kpidHeadersSize, VT_UI4 },
+        { NULL, kpidComment, VT_BSTR },        //used for OTAID + ver
+
+        //CUSTOM
+        { "Used key",                     cusedKey,                       VT_BSTR },
     };
-    IMP_IInArchive_ArcProps;
+    IMP_IInArchive_ArcProps_WITH_NAME;
 
     // specifies the avaliable property of the files contained within the archive
     static const Byte kProps[] = {
@@ -97,18 +100,18 @@ namespace Epk2 {
             DBG_LOG("[epk2] plain header signature\n");
         } else {
             //not found epk2 magic, the header could be encrypted so try to find key
-            const uint8_t* key = tryFindAESkey(hdrBuf, headerReadSize, epk2_Magic, sizeof(epk2_Magic), 12);
-            if (key) {
-                DBG_LOG("[epk2] matched key: ");
-                for (int i = 0; i < 16; i++) {
-                    DBG_LOG("%02X ", key[i]);
+                EpkKey* key = tryFindAESkeyNew(hdrBuf, headerReadSize, epk2_Magic, sizeof(epk2_Magic), 12);
+                if (key) {
+                    DBG_LOG("[epk2] matched key: ");
+                for (int i = 0; i < key->keySize; i++) {
+                    DBG_LOG("%02X ", key->key[i]);
                 }    
                 DBG_LOG("\n");
                 isKeyFound = true;
-                memcpy(_key, key, 16);
+                _key = key;
 
                 //decrypt header
-                decryptAES128ecbUnalign(hdrBuf, headerReadSize, _key);
+                decryptAESecbAuto(hdrBuf, headerReadSize, _key->key, _key->keySize);
                 memcpy(&header, hdrBuf, sizeof(header));
 
             } else {
@@ -160,15 +163,15 @@ namespace Epk2 {
             //decrypt pak header
             //if key is not found at this point(because header was plain), we need to find the key using the Pak magic.
             if (!isKeyFound) {
-                const uint8_t* key = tryFindAESkey(pakHdrB, sizeof(PakHeader), pakMagic, 4, 96);
+                EpkKey* key = tryFindAESkeyNew(pakHdrB, sizeof(PakHeader), pakMagic, 4, 96);
                 if (key) {
                     DBG_LOG("[epk2] matched key: ");
-                    for (int i = 0; i < 16; i++) {
-                        DBG_LOG("%02X ", key[i]);
-                    }
+                    for (int i = 0; i < key->keySize; i++) {
+                        DBG_LOG("%02X ", key->key[i]);
+                    }    
                     DBG_LOG("\n");
-                    memcpy(_key, key, 16);
                     isKeyFound = true;
+                    _key = key;
                 } else {
                     //no key, return false
                     DBG_LOG("[epk2] not found key...\n");
@@ -176,7 +179,7 @@ namespace Epk2 {
                 }
             }
             
-            decryptAES128ecbUnalign(pakHdrB, sizeof(PakHeader), _key);
+            decryptAESecbAuto(pakHdrB, sizeof(PakHeader), _key->key, _key->keySize);
             PakHeader pakHdr;
             memcpy(&pakHdr, pakHdrB, sizeof(PakHeader));
             DBG_LOG("[epk2] pakHdr platid %s\n", pakHdr.platformID);
@@ -276,7 +279,7 @@ namespace Epk2 {
                 RINOK(ReadStream_FALSE(_inStream, pakHdrB, sizeof(PakHeader)));
 
                 //decrypt pak header
-                decryptAES128ecbUnalign(pakHdrB, sizeof(PakHeader), _key);
+                decryptAESecbAuto(pakHdrB, sizeof(PakHeader), _key->key, _key->keySize);
                 PakHeader pakHdr;
                 memcpy(&pakHdr, pakHdrB, sizeof(PakHeader));
 
@@ -290,7 +293,7 @@ namespace Epk2 {
                 std::vector<Byte> segmentData(pakHdr.segmentSize);
                 RINOK(ReadStream_FALSE(_inStream, segmentData.data(), pakHdr.segmentSize));
                 //decrypt data
-                decryptAES128ecbUnalign(segmentData.data(), pakHdr.segmentSize, _key);
+                decryptAESecbAuto(segmentData.data(), pakHdr.segmentSize, _key->key, _key->keySize);
 
                 //write decrypted segment to output stream
                 UInt32 written;
@@ -347,6 +350,10 @@ namespace Epk2 {
                 Utf8StringToProp(comment, prop);
                 break;
             }
+            case cusedKey:
+                AString comment(_key->comment.c_str());
+                Utf8StringToProp(comment, prop);
+                break;
         }
         prop.Detach(value);
         return S_OK;
@@ -418,7 +425,7 @@ namespace Epk2 {
         NULL,   // ?ae
         0xA2,   // unique id for GUID
         0,  //offset of signature ? even thogh it shouldnt be used here..
-        0,  // arc flags
+        NArcInfoFlags::kByExtOnlyOpen,  // open only with .epk extension to not waste time on other files
         0   // isArc
     )
 

@@ -31,7 +31,7 @@ namespace Epk3 {
         UInt64 _headerSize;
         uint8_t _version[4];
         std::string _otaID;
-        uint8_t _key[16];
+        EpkKey* _key;
         UInt32 _signatureSize;
         bool _isNewType;
 
@@ -54,6 +54,7 @@ namespace Epk3 {
         { NULL, kpidComment, VT_BSTR },        //used for OTAID + ver
 
         //CUSTOM
+        { "Used key",                     cusedKey,                       VT_BSTR },
         { "New type",                     cIsNewType,                     VT_BOOL },
         { "Platform Version",             cplatformVersion,               VT_BSTR },
         { "SDK Version",                  cSdkVersion,                    VT_BSTR },
@@ -110,32 +111,32 @@ namespace Epk3 {
         size_t headerReadSize = MAX_HDR_SIZE - 128;
         RINOK(ReadStream_FALSE(stream, hdrBuf, headerReadSize));
 
-        const uint8_t* key = tryFindAESkey(hdrBuf, headerReadSize, epk3_Magic, sizeof(epk3_Magic), 0);
+        EpkKey* key = tryFindAESkeyNew(hdrBuf, headerReadSize, epk3_Magic, sizeof(epk3_Magic), 0);
         if (key) {
             DBG_LOG("[epk3] matched key: ");
-            for (int i = 0; i < 16; i++) {
-                DBG_LOG("%02X ", key[i]);
+            for (int i = 0; i < key->keySize; i++) {
+                DBG_LOG("%02X ", key->key[i]);
             }    
             DBG_LOG("\n");
             _signatureSize = 128;
             _isNewType = false;
-            memcpy(_key, key, 16);
+            _key = key;
         } else {
             //no key found for old type (128 signature), now try new type (256 signature)
             RINOK(InStream_SeekSet(stream, 256));
             headerReadSize = MAX_HDR_SIZE - 256;
             RINOK(ReadStream_FALSE(stream, hdrBuf, headerReadSize));
 
-            key = tryFindAESkey(hdrBuf, headerReadSize, epk3_Magic, sizeof(epk3_Magic), 0);
+            key = tryFindAESkeyNew(hdrBuf, headerReadSize, epk3_Magic, sizeof(epk3_Magic), 0);
             if (key) {
                 DBG_LOG("[epk3] matched key: ");
-                for (int i = 0; i < 16; i++) {
-                    DBG_LOG("%02X ", key[i]);
+                for (int i = 0; i < key->keySize; i++) {
+                    DBG_LOG("%02X ", key->key[i]);
                 }    
                 DBG_LOG("\n");
                 _signatureSize = 256;
                 _isNewType = true;
-                memcpy(_key, key, 16);
+                _key = key;
             } else {
                 //no key found for both types, return false
                 DBG_LOG("[epk3] not found key...\n");
@@ -146,7 +147,7 @@ namespace Epk3 {
         // ---------------------
 
         //decrypt header
-        decryptAES128ecbUnalign(hdrBuf, headerReadSize, _key);
+        decryptAESecbAuto(hdrBuf, headerReadSize, _key->key, _key->keySize);
         Header header;
         memcpy(&header, hdrBuf, sizeof(header));
 
@@ -209,7 +210,7 @@ namespace Epk3 {
         RINOK(InStream_SeekSet(stream, _signatureSize + headerReadSize + 36 + _signatureSize));
         std::vector<Byte> pkgInfo(header.packageInfoSize);
         RINOK(ReadStream_FALSE(stream, pkgInfo.data(), header.packageInfoSize));
-        decryptAES128ecbUnalign(pkgInfo.data(), header.packageInfoSize, _key);
+        decryptAESecbAuto(pkgInfo.data(), header.packageInfoSize, _key->key, _key->keySize);
 
         PkgInfoHeader pkgInfoHeader;
         memcpy(&pkgInfoHeader, pkgInfo.data(), sizeof(pkgInfoHeader));
@@ -349,7 +350,7 @@ namespace Epk3 {
                 std::vector<Byte> segmentData(readSize);
                 RINOK(ReadStream_FALSE(_inStream, segmentData.data(), readSize));
                 //decrypt data
-                decryptAES128ecbUnalign(segmentData.data(), readSize, _key);
+                decryptAESecbAuto(segmentData.data(), readSize, _key->key, _key->keySize);
 
                 //write decrypted segment to output stream
                 UInt32 written;
@@ -460,6 +461,10 @@ namespace Epk3 {
                     prop = (UInt32)_needToCheckCompatibleVersion;
                 }
                 break;
+            case cusedKey:
+                AString comment(_key->comment.c_str());
+                Utf8StringToProp(comment, prop);
+                break;
                 
         }
         prop.Detach(value);
@@ -520,7 +525,7 @@ namespace Epk3 {
         NULL,   // ?ae
         0xA3,   // unique id for GUID
         0,  //offset of signature ? even thogh it shouldnt be used here..
-        0,  // arc flags
+        NArcInfoFlags::kByExtOnlyOpen,  // open only with .epk extension to not waste time on other files
         0   // isArc
     )
 }

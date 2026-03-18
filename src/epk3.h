@@ -25,6 +25,7 @@ namespace Epk3 {
         cupdatePlatformVersion,
         ccompatibleMinimumVersion,
         cneedToCheckCompatibleVersion,
+        cusedKey,
     };
 
     // --
