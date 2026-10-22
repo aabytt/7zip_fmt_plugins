@@ -3,22 +3,28 @@ on: workflow_dispatch
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential mingw-w64
+      # подтягивает INCLUDE/LIB от MSVC и Windows SDK, их использует clang
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install make
+        shell: cmd
+        run: choco install make -y --no-progress
 
       - name: Build
-        run: make
+        shell: cmd
+        run: |
+          if not exist bin mkdir bin
+          make x64
 
       - uses: actions/upload-artifact@v4
         with:
           name: 7zip-plugins
-          path: |
-            **/*.dll
+          path: bin/*.dll
