@@ -10,7 +10,7 @@ jobs:
       - name: Build
         shell: cmd
         run: |
-          REM замените на реальную команду сборки из README
+          make
           nmake -f makefile
       - uses: actions/upload-artifact@v4
         with:
